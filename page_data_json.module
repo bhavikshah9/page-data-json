@@ -1,0 +1,149 @@
+<?php
+
+/**
+ * @file
+ * Main module file.
+ */
+
+/**
+ * Implements hook_help().
+ */
+function page_data_json_help($path, $arg) {
+  switch ($path) {
+    case 'admin/help#page_data_json':
+      $output = '<p>' . t('This module allows to edit Site information and provide Page node data in JSON format.') . '</p>';
+      return $output;
+  }
+}
+
+/**
+ * Implements hook_menu().
+ */
+function page_data_json_menu() {
+  $items['page_json/%/%'] = array(
+    'title'             => 'JSON representation',
+    'delivery callback' => 'drupal_json_output',
+    'access callback'   => TRUE,
+    'page callback'     => 'page_data_json_json',
+    'page arguments'    => array(1, 2), // supposed to be key and node_id resp.
+  );
+  return $items;
+}
+
+/**
+ * Page callback
+ *
+ * This checks for validation conditions and returns node data in JSON format.
+ *
+ * @param $key
+ *   Site API key from URL
+ *
+ * @param $node_id
+ *   Node ID from URL
+ */
+function page_data_json_json($key, $node_id) {
+  $site_api_key = variable_get("siteapikey");
+  $new_callback = "drupal_deliver_html_page";
+  if ($site_api_key !== $key) {
+    // key not matched
+    // access denied
+    page_data_json_page_delivery_callback_alter($new_callback, TRUE);
+    drupal_access_denied();
+  }
+  else {
+    // key matched
+
+    $node = node_load($node_id);
+    if ($node === FALSE) {
+      // node does not exists
+      // access denied
+      page_data_json_page_delivery_callback_alter($new_callback, TRUE);
+      drupal_access_denied();
+    }
+    else {
+      // node exists
+
+      if ($node->type === "page" && (int)$node->status === NODE_PUBLISHED) {
+        // node is page and is published
+        return array('node' => $node);
+      }
+      else {
+        // node type is other than "page" or the node is not published
+        // access denied
+        page_data_json_page_delivery_callback_alter($new_callback, TRUE);
+        drupal_access_denied();
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_page_delivery_callback_alter().
+ *
+ * @param $delivery_callback
+ *   Delivery callback
+ *
+ * @param $reset
+ *   Defaults to FALSE
+ */
+function page_data_json_page_delivery_callback_alter(&$delivery_callback, $reset = FALSE) {
+  static $stored_callback;
+  if ($reset) {
+    $stored_callback = $delivery_callback;
+  }
+  elseif (isset($stored_callback)) {
+    $delivery_callback = $stored_callback;
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function page_data_json_form_system_site_information_settings_alter(&$form, $form_state, $form_id) {
+  $default_api_key_value = "No API key yet";
+  $site_api_key = variable_get('siteapikey', $default_api_key_value);
+
+  // Adding new text box for Site API key within fieldset
+  $form['siteapi'] = array(
+    '#type'   => 'fieldset',
+    '#title'  => t('API Key'),
+    '#weight' => 4,
+  );
+  $form['siteapi']['siteapikey'] = array(
+    '#type'          => 'textfield',
+    '#title'         => t('Site API Key'),
+    '#weight'        => 1,
+    '#default_value' => $site_api_key,
+    '#required'      => TRUE,
+  );
+
+  // change button text if Site API key is saved
+  if ($site_api_key != $default_api_key_value) {
+    $form['actions']['submit']['#value'] = t('Update configuration');
+  }
+
+  $form['#validate'][] = 'page_data_json_form_validate';
+  $form['#submit'][] = 'page_data_json_form_submit';
+}
+
+/**
+ * Custom Validation handler
+ */
+function page_data_json_form_validate($form, &$form_state) {
+  // architectural-assumption supporting validation
+  // architectural-assumption: Only alphanumeric characters are allowed.
+  if (!preg_match('/^[a-zA-Z0-9]+$/u', $form_state['values']['siteapikey'])) {
+    form_set_error("siteapikey", "Invalid Site API key.");
+  }
+}
+
+/**
+ * Custom Submit handler
+ */
+function page_data_json_form_submit($form, &$form_state) {
+  // Don't clear previous messages
+  // Otherwise it seems as if only Site API key is saved. It should be clear to
+  // admin that All configuration options are saved along with Site API key.
+  $site_api_key = $form_state['values']['siteapikey'];
+  drupal_set_message(t("Site API key(@siteapikey) is saved.", array('@siteapikey' => $site_api_key)));
+}

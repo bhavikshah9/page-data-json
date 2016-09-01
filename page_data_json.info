@@ -1,0 +1,4 @@
+name = Page data in JSON
+description = "This module allows to edit Site information and provide Page data in JSON format."
+package = Administration
+core = 7.x
